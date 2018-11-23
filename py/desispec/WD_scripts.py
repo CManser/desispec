@@ -269,30 +269,58 @@ def tmp_func(_T, _g, _rv, _sn, _l, _m):
         return lines_s, lines_m, model, sum_l_chi2
 
 
-def line_info(spec):
-    # NEEDS TO BE UPDATED TO READ IN THE RED ARM FOR ADDITIONAL LINES
-    f_bool = [np.isnan(spec[:,1])==False]
-    o_wa, o_flux, errs = spec[:,0][f_bool], spec[:,1][f_bool], spec[:,2][f_bool]
-    
+def line_info(spec_blue, spec_red):
+    import matplotlib.pyplot as plt
     # Define the normalising regions
-    w_bool = [((o_wa > 3850) & (o_wa < 3870)) | ((o_wa > 4220) & (o_wa < 4245)) | 
-              ((o_wa > 5250) & (o_wa < 5400)) | ((o_wa > 6100) & (o_wa < 6550)) | 
-              ((o_wa > 7000) & (o_wa < 9000))]
-    wa, flux, sigma = o_wa[w_bool], o_flux[w_bool], errs[w_bool]
-
-    func_poly = np.polyfit(wa, flux,5)
+    wb, wr = spec_blue[:,0], spec_red[:,0]
+    fb, fr = spec_blue[:,1], spec_red[:,1]
+    w_bool_b = [((wb > 3650) & (wb < 3700)) | ((wb > 3850) & (wb < 3870)) | 
+                ((wb > 4220) & (wb < 4245)) | ((wb > 4525) & (wb < 4575)) | 
+                ((wb > 5250) & (wb < 5400))]          
+    w_bool_r = [((wr > 5750) & (wr < 5825)) | ((wr > 6000) & (wr < 6550)) | 
+                ((wr > 6920) & (wr < 7000)) | ((wr > 7140) & (wr < 7220))]
+    tmp_wb, tmp_fb = wb[w_bool_b], fb[w_bool_b]
+    func_poly = np.polyfit(tmp_wb, tmp_fb,5)
     p = np.poly1d(func_poly)
-    ybest=p(o_wa)
+    ybest_b=p(wb)
     
-    # Calculate *all* line strengths and then returns them.
+    tmp_wr, tmp_fr = wr[w_bool_r], fr[w_bool_r]
+    func_poly = np.polyfit(tmp_wr, tmp_fr,7)
+    p = np.poly1d(func_poly)
+    ybest_r=p(wr)
+    '''
+    # PART OF TESTING NORMALISATION
+    plt.axvline(3700, ls= '--')
+    plt.axvline(5300, ls= '--')
+    plt.axvline(5800, ls= '--')
+    plt.axvline(7200, ls= '--')
+    basedir = '/Users/christophermanser/Storage/PhD_files/DESI/code/DESI_fittingcode/data'
     start,end=np.loadtxt(basedir + '/features.lst',skiprows=1, comments='#',
+                         delimiter='-', usecols=(0,1),unpack=True)
+    print(start, end)
+    for j in range(start.size):
+      plt.scatter(start[j], 3)
+      plt.scatter(end[j],   3)
+    plt.plot(wb, fb)
+    plt.plot(wb, ybest_b)
+    plt.plot(wb, fb/ybest_b)
+    plt.plot(wr, fr)
+    plt.plot(wr, ybest_r)
+    plt.plot(wr, fr/ybest_r)
+    plt.show()
+    '''
+    # Calculate *all* line strengths and then returns them.
+    start,end=np.loadtxt(basedir + '/features.lst', comments='#',
                          delimiter='-', usecols=(0,1),unpack=True)
     tmp_rtn = np.zeros(start.size)
     for i in range(start.size):
-        line_bool = [(o_wa>start[j]) & (o_wa<end[j])]
-        f_s, f_m = o_flux[line_bool], ybest[line_bool]
+        if start[i] < 5500: wave, flux, ybest = wb, fb, ybest_b
+        else: wave, flux, ybest = wr, fr, ybest_r
+        line_bool = [(wave>start[i]) & (wave<end[i])]
+        f_s, f_m = flux[line_bool], ybest[line_bool]
         ratio_line=np.average(f_s)/np.average(f_m)
         tmp_rtn[i] = ratio_line
+    print(tmp_rtn)
     return tmp_rtn
 
 
@@ -301,9 +329,9 @@ def load_training_set():
     with open(basedir + '/training_test', 'rb') as f: return pickle.load(f) 
 
 
-def WD_classify(spec, training_set = None):
+def WD_classify(spec_blue, spec_red, training_set = None):
     import pickle
-    lines=line_info(spec)
+    lines=line_info(spec_blue, spec_red)
     if training_set == None:
         print("Please feed me a training set")
         sys.exit()
@@ -320,6 +348,7 @@ def WD_flux_calib_frame(frame, knot_num = 40):
              - A list of temp, logg, and the wave & flux for the best fitting model
              - The fibers which contain white dwarfs if it is needed."""
     from scipy.interpolate import interp1d
+    training_set = load_training_set()
     # Reading the frames
     frame_b = desispec.io.read_frame(frame)
     frame_r = desispec.io.read_frame(frame.replace('-b', '-r'))
@@ -331,28 +360,35 @@ def WD_flux_calib_frame(frame, knot_num = 40):
     rcf_b_lst, rcf_r_lst, rcf_z_lst = [0]*noss, [0]*noss, [0]*noss
     model_lst = [0]*noss
     for i, fiber in enumerate(wd_fibers):
-        flux, err = frame_b.flux[fiber], frame_b.ivar[fiber] ** -0.5 
+        flux_b, err_b = frame_b.flux[fiber], frame_b.ivar[fiber] ** -0.5 
+        flux_r, err_r = frame_r.flux[fiber], frame_r.ivar[fiber] ** -0.5
+        flux_z, err_z = frame_z.flux[fiber], frame_z.ivar[fiber] ** -0.5
+        b_spec = np.vstack((wave_b, flux_b, err_b)).transpose()
+        r_spec = np.vstack((wave_r, flux_r, err_r)).transpose()
+        b_spec = b_spec[np.isnan(b_spec[:,1])==False]
+        r_spec = r_spec[np.isnan(r_spec[:,1])==False]
+        
+        # Determines whether the WD is a DA or not.
+        WD_type = WD_classify(b_spec, r_spec, training_set = training_set)
+        print(WD_type[0])
+        
         # Finding the best fitting model on the blue arm (only arm needed for DA WDs)
-        s_b = np.vstack((wave_b, flux, err)).transpose()
-        s_b = s_b[np.isnan(s_b[:,1])==False] 
-        temp, logg, rv = fit_DA(s_b)
+        temp, logg, rv = fit_DA(b_spec)
         model = interpolating_model_DA(temp,logg/100)
         m1, m2 = model[:,0]*(rv+c)/c, model[:,1]
         best_model = np.stack((m1,m2,np.ones(m1.size)), axis=-1)
         model_lst[i] = [temp, logg, best_model]
         #BLUE
         model_flux = interp1d(m1,m2,kind='linear')(wave_b)
-        r_tmp_b, e_tmp_b = flux/model_flux, err/model_flux
+        r_tmp_b, e_tmp_b = flux_b/model_flux, err_b/model_flux
         rcf_b_lst[i] = [r_tmp_b, e_tmp_b]
         #RED
-        flux, err = frame_r.flux[fiber], frame_r.ivar[fiber] ** -0.5
         model_flux = interp1d(m1,m2,kind='linear')(wave_r)
-        r_tmp_r, e_tmp_r = flux/model_flux, err/model_flux
+        r_tmp_r, e_tmp_r = flux_r/model_flux, err_r/model_flux
         rcf_r_lst[i] = [r_tmp_r, e_tmp_r]
         #ZED
-        flux, err = frame_z.flux[fiber], frame_z.ivar[fiber] ** -0.5
         model_flux = interp1d(m1,m2,kind='linear')(wave_z)
-        r_tmp_z, e_tmp_z = flux/model_flux, err/model_flux
+        r_tmp_z, e_tmp_z = flux_z/model_flux, err_z/model_flux
         rcf_z_lst[i] = [r_tmp_z, e_tmp_z] 
         # NEED TO ADD ABSOLUTE FLUX CALIBRATION
         print("Add absolute flux calibration using Gaia/colors/parallax")       
