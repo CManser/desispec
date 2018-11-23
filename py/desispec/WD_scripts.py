@@ -2,7 +2,7 @@ import numpy as np
 import sys
 import desispec.io
 
-basedir='/Users/christophermanser/Storage/PhD_files/DESI/code/branches_desi_code/desispec/py/desispec/data/WD_calib'
+basedir='/Users/christophermanser/Storage/PhD_files/DESI/code/DESI_fittingcode/data'
 c = 299792.458 # Speed of light in km/s
 
 def air_to_vac(wavin):
@@ -184,7 +184,7 @@ def norm_models(model='da2014'):
     return [out_m_wave,norm_m_flux,model_param]
 
 
-def norm_spectra(spectra, add_infinity=True):
+def norm_spectra(spectra):
     """ Normalised spectra by DA WD continuum regions. Spec of form 
     array([wav,flux,err]) (err not necessary)
     Optional:
@@ -192,10 +192,8 @@ def norm_spectra(spectra, add_infinity=True):
         add_infinity=False : add a spline point at [inf,0]
     returns spectra, cont_flux """
     from scipy import interpolate
-    start_n=np.array([3770.,3796.,3835.,3895.,3995.,4130.,4490.,4620.,5070.,5200.,
-                      6000.,7000.,7550.,8400.])
-    end_n=np.array([3795.,3830.,3885.,3960.,4075.,4290.,4570.,4670.,5100.,5300.,
-                    6100.,7050.,7600.,8450.])
+    start_n=np.array([3770.,3796.,3835.,3895.,3995.,4130.,4490.,4620.,5070.,5200.])
+    end_n  =np.array([3795.,3830.,3885.,3960.,4075.,4290.,4570.,4670.,5100.,5400.])
     n_range_s=np.array(['P','P','P','P','P','P','M','M','M','M','M','M','M','M'])
     if len(spectra[0])>2:
         snr = np.zeros([len(start_n),3])
@@ -232,14 +230,6 @@ def norm_spectra(spectra, add_infinity=True):
         knots=knots[1:]
     if (snr[:,0].min() > 4340) or (snr[:,0].max() < 4901): 
         knots=None # 'Warning: knots used probably bad'
-    if add_infinity: # Adds points at inf & 0 for spline to fit to err = mean(spec err)
-        if snr.shape[1] > 2:
-            mean_snr = np.mean(snr[:,2])
-            snr = np.vstack([ snr, np.array([90000. ,0., mean_snr ]) ])
-            snr = np.vstack([ snr, np.array([100000.,0., mean_snr ]) ])
-        else:
-            snr = np.vstack([ snr, np.array([90000.,0.]) ])
-            snr = np.vstack([ snr, np.array([100000.,0.]) ])
     try: #weight by errors
         if len(spectra[0])>2: 
             tck = interpolate.splrep(snr[:,0],snr[:,1], w=1/snr[:,2], t=knots, k=3)
@@ -252,8 +242,7 @@ def norm_spectra(spectra, add_infinity=True):
     cont_flux = interpolate.splev(wav,tck).reshape(wav.size, 1)
     spectra_ret = np.copy(spectra)
     spectra_ret[:,1:] = spectra_ret[:,1:]/cont_flux
-    return spectra_ret, cont_flux
-    
+    return spectra_ret, cont_flux    
 
 def tmp_func(_T, _g, _rv, _sn, _l, _m):
     from scipy import interpolate
@@ -282,7 +271,6 @@ def tmp_func(_T, _g, _rv, _sn, _l, _m):
 
 def line_info(spec):
     # NEEDS TO BE UPDATED TO READ IN THE RED ARM FOR ADDITIONAL LINES
-    feature_list=['DA', 'DB', 'DQ', 'DZ']
     f_bool = [np.isnan(spec[:,1])==False]
     o_wa, o_flux, errs = spec[:,0][f_bool], spec[:,1][f_bool], spec[:,2][f_bool]
     
@@ -297,17 +285,14 @@ def line_info(spec):
     ybest=p(o_wa)
     
     # Calculate *all* line strengths and then returns them.
-    tmp_rtn = np.zeros(23)
-    count = 0
-    for elem in feature_list:
-        start,end=np.loadtxt('{:s}/{:s}.features'.format(basedir, elem),skiprows=1,
-                             delimiter='-', usecols=(0,1),unpack=True)
-        for j in range(np.size(start)):
-            line_bool = [(o_wa>start[j]) & (o_wa<end[j])]
-            f_s, f_m = o_flux[line_bool], ybest[line_bool]
-            ratio_line=np.average(f_s)/np.average(f_m)
-            tmp_rtn[count] = ratio_line
-            count +=1
+    start,end=np.loadtxt(basedir + '/features.lst',skiprows=1, comments='#',
+                         delimiter='-', usecols=(0,1),unpack=True)
+    tmp_rtn = np.zeros(start.size)
+    for i in range(start.size):
+        line_bool = [(o_wa>start[j]) & (o_wa<end[j])]
+        f_s, f_m = o_flux[line_bool], ybest[line_bool]
+        ratio_line=np.average(f_s)/np.average(f_m)
+        tmp_rtn[i] = ratio_line
     return tmp_rtn
 
 
@@ -355,6 +340,7 @@ def WD_flux_calib_frame(frame, knot_num = 40):
         m1, m2 = model[:,0]*(rv+c)/c, model[:,1]
         best_model = np.stack((m1,m2,np.ones(m1.size)), axis=-1)
         model_lst[i] = [temp, logg, best_model]
+        #BLUE
         model_flux = interp1d(m1,m2,kind='linear')(wave_b)
         r_tmp_b, e_tmp_b = flux/model_flux, err/model_flux
         rcf_b_lst[i] = [r_tmp_b, e_tmp_b]
