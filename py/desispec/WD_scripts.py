@@ -288,27 +288,7 @@ def line_info(spec_blue, spec_red):
     func_poly = np.polyfit(tmp_wr, tmp_fr,7)
     p = np.poly1d(func_poly)
     ybest_r=p(wr)
-    '''
-    # PART OF TESTING NORMALISATION
-    plt.axvline(3700, ls= '--')
-    plt.axvline(5300, ls= '--')
-    plt.axvline(5800, ls= '--')
-    plt.axvline(7200, ls= '--')
-    basedir = '/Users/christophermanser/Storage/PhD_files/DESI/code/DESI_fittingcode/data'
-    start,end=np.loadtxt(basedir + '/features.lst',skiprows=1, comments='#',
-                         delimiter='-', usecols=(0,1),unpack=True)
-    print(start, end)
-    for j in range(start.size):
-      plt.scatter(start[j], 3)
-      plt.scatter(end[j],   3)
-    plt.plot(wb, fb)
-    plt.plot(wb, ybest_b)
-    plt.plot(wb, fb/ybest_b)
-    plt.plot(wr, fr)
-    plt.plot(wr, ybest_r)
-    plt.plot(wr, fr/ybest_r)
-    plt.show()
-    '''
+
     # Calculate *all* line strengths and then returns them.
     start,end=np.loadtxt(basedir + '/features.lst', comments='#',
                          delimiter='-', usecols=(0,1),unpack=True)
