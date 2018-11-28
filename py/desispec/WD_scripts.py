@@ -2,7 +2,7 @@ import numpy as np
 import sys
 import desispec.io
 
-basedir='/Users/christophermanser/Storage/PhD_files/DESI/code/DESI_fittingcode/data'
+basedir='/Volumes/Storage/PhD_files/DESI/code/branches_desi_code/desispec/py/desispec/data/WD_calib'
 c = 299792.458 # Speed of light in km/s
 
 def air_to_vac(wavin):
