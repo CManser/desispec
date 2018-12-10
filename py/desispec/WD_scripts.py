@@ -24,7 +24,16 @@ def fit_DA(spectra, model_c = 'da2014'):
     best=fit_line(spec_n, l_crop,model=model_c)
     first_T, first_g = best[2][0], best[2][1]
     all_chi, all_TL  = best[4], best[3]
-
+    #-----finds which fitting regions to use based on temperature 
+    if first_T>=16000 and first_T<=40000:
+        line_crop = np.loadtxt(basedir+'/line_crop.dat')
+        l_crop = line_crop[(line_crop[:,0]>spec_w.min()) & (line_crop[:,1]<spec_w.max())]
+    elif first_T<16000:
+        line_crop = np.loadtxt(basedir+'/line_crop_cool.dat')
+        l_crop = line_crop[(line_crop[:,0]>spec_w.min()) & (line_crop[:,1]<spec_w.max())]
+    elif first_T>40000:
+        line_crop = np.loadtxt(basedir+'/line_crop_hot.dat')
+        l_crop = line_crop[(line_crop[:,0]>spec_w.min()) & (line_crop[:,1]<spec_w.max())]
     #------find starting point for secondary solution
     if first_T <= 13000.:
         other_TL, other_chi = all_TL[all_TL[:,0]>=13000.], all_chi[all_TL[:,0]>=13000.]
@@ -44,11 +53,24 @@ def fit_DA(spectra, model_c = 'da2014'):
     print("T = ", best_T, abs(best_T-other_T[0]))
     print("logg = ", best_g/100, abs(best_g-other_T[1])/100)
     print("rv =",best_rv)
+    
+    sec_T, sec_g = other_sol[0][0], other_sol[0][1]
+    #-----as above, for the second solution. 
+    if sec_T>=16000 and sec_T<=40000:
+        line_crop = np.loadtxt(basedir+'/line_crop.dat')
+        l_crop = line_crop[(line_crop[:,0]>spec_w.min()) & (line_crop[:,1]<spec_w.max())]
+    elif sec_T<16000:
+        line_crop = np.loadtxt(basedir+'/line_crop_cool.dat')
+        l_crop = line_crop[(line_crop[:,0]>spec_w.min()) & (line_crop[:,1]<spec_w.max())]
+    elif sec_T>40000:
+        line_crop = np.loadtxt(basedir+'/line_crop_hot.dat')
+        l_crop = line_crop[(line_crop[:,0]>spec_w.min()) & (line_crop[:,1]<spec_w.max())]
+    
     #repeat fit for secondary solution
-    sec_best = optimize.fmin(fit_func,(other_sol[0][0],other_sol[0][1],best_rv),
+    sec_best = optimize.fmin(fit_func,(sec_T,sec_g,best_rv),
                              args=(spec_n,l_crop,model_c,0),disp=0,xtol=1.,ftol=1.,
                              full_output=1)
-    other_T2 = optimize.fmin(err_func,(other_sol[0][0],other_sol[0][1]),
+    other_T2 = optimize.fmin(err_func,(sec_T,sec_g),
                              args=(best_rv,sec_best[1],spec_n,l_crop,model_c),disp=0,
                              xtol=1.,ftol=1.,full_output=0)
     s_best_T, s_best_g, s_best_rv = sec_best[0][0], sec_best[0][1], sec_best[0][2]
@@ -61,6 +83,7 @@ def fit_DA(spectra, model_c = 'da2014'):
           spectra[:,1][(spec_w >= 4500.0) & (spec_w <= 4750.0)].size)
     print('StN = %.1f'%(StN))
     return best_T, best_g, best_rv
+
 
 
 def err_func(x,rv,valore,specn,lcrop,models='da2014'):
