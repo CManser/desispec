@@ -21,14 +21,14 @@ import sys,re,os,copy
 
 # NOTE: only one class in this file should have a name that starts with "Task".
 
-class TaskQAData(BaseTask):
-    """Class containing the properties of generating QA for a science exposure
+class TaskQACalib(BaseTask):
+    """Class containing the properties of generating QA for a calibration exposure
     """
     def __init__(self):
-        super(TaskQAData, self).__init__()
+        super(TaskQACalib, self).__init__()
         # then put int the specifics of this class
         # _cols must have a state
-        self._type = "qadata"
+        self._type = "qacalib"
         self._cols = [
             "night",
             "band",
@@ -52,8 +52,8 @@ class TaskQAData(BaseTask):
         """
         props = self.name_split(name)
         camera = "{}{}".format(props["band"], props["spec"])
-        return [ findfile("qa_data", night=props["night"], expid=props["expid"],
-            camera=camera) ]  # Add qaprod_dir here to have QA land somewhere else?
+        return [ findfile("qa_calib", night=props["night"], expid=props["expid"],
+            camera=camera)]
 
     def _deps(self, name, db, inputs):
         """See BaseTask.deps.
@@ -61,7 +61,7 @@ class TaskQAData(BaseTask):
         from .base import task_classes
         props = self.name_split(name)
         deptasks = {
-            "cframe" : task_classes["cframe"].name_join(props),
+            "fiberflat" : task_classes["fiberflat"].name_join(props),
         }
         return deptasks
 
