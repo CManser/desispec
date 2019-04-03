@@ -22,10 +22,14 @@ log = get_logger(timestamp=True)
 DTSDir = namedtuple('DTSDir', 'source, staging, destination, hpss')
 
 
-config = [DTSDir('/data/dts/exposures/raw',
-                 os.path.realpath(os.path.join(os.environ['DESI_ROOT'], 'spectro', 'staging', 'raw')),
-                 os.path.realpath(os.environ['DESI_SPECTRO_DATA']),
-                 'desi/spectro/data'),]
+def _config():
+    """Wrap configuration so that module can be imported without
+    environment variables set.
+    """
+    return [DTSDir('/data/dts/exposures/raw',
+                   os.path.realpath(os.path.join(os.environ['DESI_ROOT'], 'spectro', 'staging', 'raw')),
+                   os.path.realpath(os.environ['DESI_SPECTRO_DATA']),
+                   'desi/spectro/data'),]
 
 
 def pack_args(options):
@@ -175,7 +179,7 @@ def main():
         #
         # Find symlinks at KPNO.
         #
-        for d in config:
+        for d in _config():
             status_dir = os.path.join(os.path.dirname(d.staging), 'status')
             cmd = [ssh, '-q', 'dts', '/bin/find', d.source, '-type', 'l']
             log.debug(' '.join(cmd))
