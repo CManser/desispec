@@ -319,10 +319,7 @@ Full desispec API Reference
 .. automodule:: desispec.scripts.bootcalib
     :members:
 
-.. .. automodule:: desispec.scripts.dts
-..     :members:
-
-.. automodule:: desispec.scripts.delivery
+.. automodule:: desispec.scripts.dts
     :members:
 
 .. automodule:: desispec.scripts.dts_status
