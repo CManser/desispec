@@ -78,18 +78,10 @@ def _options(*args):
                       help="Trigger DESI pipeline on this NERSC system (default %(default)s).")
     prsr.add_argument('-P', '--no-pipeline', action='store_false', dest='pipeline',
                       help="Only transfer files, don't start the DESI pipeline.")
-    # prsr.add_argument('-p', '--prefix', metavar='PREFIX', action='append',
-    #                   help="Prepend one or more commands to the night command.")
     prsr.add_argument('-s', '--sleep', metavar='M', type=int, default=10,
                       help='Sleep M minutes before checking for new data (default %(default)s minutes).')
-    # prsr.add_argument('filename', metavar='FILE',
-    #                   help='Filename with path of delivered file.')
-    # prsr.add_argument('exposure', type=int, metavar='EXPID',
-    #                   help='Exposure number.')
-    # prsr.add_argument('night', metavar='YYYYMMDD', help='Night ID.')
-    # prsr.add_argument('nightStatus',
-    #                   choices=('start', 'update', 'end'),
-    #                   help='Start/end info.')
+    prsr.add_argument('-S', '--shadow', action='store_true',
+                      help='Observe the actions of another data transfer script but do not make any changes.')
     if len(args) > 0:
         options = prsr.parse_args(args)
     else:  # pragma: no cover
@@ -241,8 +233,6 @@ def main():
         log.setLevel(DEBUG)
     ssh = 'ssh'
     # ssh = '/bin/ssh'
-    status_dir = os.path.join(os.environ['DESI_ROOT'],
-                              'spectro', 'staging', 'status')
     while True:
         log.info('Starting transfer loop.')
         if os.path.exists(options.kill):
@@ -268,7 +258,8 @@ def main():
                     n = os.path.join(d.staging, night)
                     if not os.path.isdir(n):
                         log.debug("os.makedirs('%s', exist_ok=True)", n)
-                        # os.makedirs(n, exist_ok=True)
+                        if not options.shadow:
+                            os.makedirs(n, exist_ok=True)
                     #
                     # Has exposure already been transferred?
                     #
@@ -281,10 +272,12 @@ def main():
                                'dts:'+os.path.join(d.source, night, exposure)+'/',
                                se+'/']
                         log.debug(' '.join(cmd))
-                        # p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
-                        # out, err = p.communicate()
-                        # status = str(p.returncode)
-                        status = '0'
+                        if options.shadow:
+                            status = '0'
+                        else:
+                            p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
+                            out, err = p.communicate()
+                            status = str(p.returncode)
                     else:
                         log.info('%s already transferred.', se)
                         status = 'done'
@@ -295,14 +288,16 @@ def main():
                         #
                         # Check permissions.
                         #
-                        log.debug("os.chmod('%s', 0%o)", se, dir_perm)
-                        # os.chmod(se, dir_perm)
+                        log.debug("os.chmod('%s', 0o%o)", se, dir_perm)
+                        if not options.shadow:
+                            os.chmod(se, dir_perm)
                         exposure_files = os.listdir(se)
                         for f in exposure_files:
                             ff = os.path.join(se, f)
                             if os.path.isfile(ff):
-                                log.debug("os.chmod('%s', 0%o)", ff, file_perm)
-                                # os.chmod(ff, file_perm)
+                                log.debug("os.chmod('%s', 0o%o)", ff, file_perm)
+                                if not options.shadow:
+                                    os.chmod(ff, file_perm)
                             else:
                                 log.warning("Unexpected file type detected: %s", ff)
                         #
@@ -324,13 +319,15 @@ def main():
                             dn = os.path.join(d.destination, night)
                             if not os.path.isdir(dn):
                                 log.debug("os.makedirs('%s', exist_ok=True)", dn)
-                                # os.makedirs(dn, exist_ok=True)
+                                if not options.shadow:
+                                    os.makedirs(dn, exist_ok=True)
                             #
                             # Move data into DESI_SPECTRO_DATA.
                             #
                             if not os.path.isdir(de):
                                 log.debug("shutil.move('%s', '%s')", se, dn)
-                                # shutil.move(se, dn)
+                                if not options.shadow:
+                                    shutil.move(se, dn)
                             #
                             # Is this a "realistic" exposure?
                             #
@@ -340,9 +337,10 @@ def main():
                                 #
                                 cmd = pipeline_update(options.nersc, night, exposure)
                                 log.debug(' '.join(cmd))
-                                # p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
-                                # out, err = p.communicate()
-                                # status = str(p.returncode)
+                                if not options.shadow:
+                                    p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
+                                    out, err = p.communicate()
+                                    status = str(p.returncode)
                                 done_config = {'flats': 'flats', 'arcs': 'arcs',
                                                'science': 'redshifts'}
                                 done = False
@@ -350,9 +348,10 @@ def main():
                                     if os.path.exists(os.path.join(de, '{0}-{1}-{2}.done'.format(k, night, exposure))):
                                         cmd = pipeline_update(options.nersc, night, exposure, command=done_config[k])
                                         log.debug(' '.join(cmd))
-                                        # p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
-                                        # out, err = p.communicate()
-                                        # status = str(p.returncode)
+                                        if not options.shadow:
+                                            p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
+                                            out, err = p.communicate()
+                                            status = str(p.returncode)
                                         update_status(status_dir, night, exposure, last=k)
                                         done = True
                                 if not done:
@@ -381,6 +380,8 @@ def main():
             now = int(dt.datetime.utcnow().strftime('%H'))
             hpss_file = d.hpss.replace('/', '_')
             ls_file = os.path.join(os.environ['CSCRATCH'], hpss_file + '.txt')
+            if options.shadow:
+                ls_file = ls_file.replace('.txt', '.shadow.txt')
             if now >= options.backup:
                 if os.path.isdir(os.path.join(d.destination, yesterday)):
                     log.debug("os.remove('%s')", ls_file)
@@ -388,9 +389,9 @@ def main():
                     cmd = ['/usr/common/mss/bin/hsi', '-O', ls_file,
                            'ls', '-l', d.hpss]
                     log.debug(' '.join(cmd))
-                    # p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
-                    # out, err = p.communicate()
-                    # status = str(p.returncode)
+                    p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
+                    out, err = p.communicate()
+                    status = str(p.returncode)
                     #
                     # Both a .tar and a .tar.idx file should be present.
                     #
@@ -401,14 +402,20 @@ def main():
                     if backup_file in backup_files and backup_file + '.idx' in backup_files:
                         log.debug("Backup of %s already complete.", yesterday)
                     else:
+                        start_dir = os.getcwd()
+                        log.debug("os.chdir('%s')", d.destination)
+                        os.chdir(d.destination)
                         cmd = ['/usr/common/mss/bin/htar',
-                               '-cvhf', d.hpss + '/' + backup_file,
+                               '-cvhf', os.path.join(d.hpss, backup_file),
                                '-H', 'crc:verify=all',
                                yesterday]
                         log.debug(' '.join(cmd))
-                        # p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
-                        # out, err = p.communicate()
-                        # status = str(p.returncode)
+                        if not options.shadow:
+                            p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
+                            out, err = p.communicate()
+                            status = str(p.returncode)
+                        log.debug("os.chdir('%s')", start_dir)
+                        os.chdir(start_dir)
                 else:
                     log.warning("No data from %s detected, skipping HPSS backup.", yesterday)
         # time.sleep(options.sleep*60)
