@@ -8,6 +8,7 @@ Entry point for :command:`desi_dts`.
 """
 from __future__ import absolute_import, division, print_function, unicode_literals
 import datetime as dt
+import json
 import os
 import shutil
 import stat
@@ -15,6 +16,7 @@ import subprocess as sub
 import sys
 import time
 from collections import namedtuple
+from pkg_resources import resource_filename
 from desiutil.log import get_logger, DEBUG
 
 
@@ -186,6 +188,45 @@ def pipeline_update(pipeline_host, night, exposure, command='update', ssh='ssh',
             '--nersc_maxnodes', '25']
 
 
+def status_data(directory):
+    """Return the JSON-encoded transfer status data in `directory`.
+    """
+    if not os.path.exists(directory):
+        log.debug("os.makedirs('%s')", directory)
+        os.makedirs(directory)
+        for ext in ('html', 'js'):
+            src = resource_filename('desispec', 'data/dts/dts_status.' + ext)
+            if ext == 'html':
+                shutil.copyfile(src, os.path.join(directory, 'index.html'))
+            else:
+                shutil.copy(src, directory)
+        return []
+    json_file = os.path.join(directory, 'dts_status.json')
+    try:
+        with open(json_file) as j:
+            s = json.load(j)
+    except FileNotFoundError:
+        s = []
+    return s
+
+
+def update_status(directory, night, expid, failure=False, last=None):
+    """Update the transfer status.
+    """
+    s = status_data(directory)
+    if last is None:
+        l = ''
+    else:
+        l = last
+    row = [int(night), int(expid), not failure, l]
+    s.insert(0, row)
+    k = lambda x: x[0]*10000000 + x[1]
+    s = sorted(s, key=k, reverse=True)
+    json_file = os.path.join(directory, 'dts_status.json')
+    with open(json_file, 'w') as j:
+        json.dump(s, j, indent=None, separators=(',', ':'))
+
+
 def main():
     """Entry point for :command:`desi_dts`.
 
@@ -200,6 +241,8 @@ def main():
         log.setLevel(DEBUG)
     ssh = 'ssh'
     # ssh = '/bin/ssh'
+    status_dir = os.path.join(os.environ['DESI_ROOT'],
+                              'spectro', 'staging', 'status')
     while True:
         log.info('Starting transfer loop.')
         if os.path.exists(options.kill):
@@ -310,16 +353,15 @@ def main():
                                         # p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
                                         # out, err = p.communicate()
                                         # status = str(p.returncode)
-                                        # sprun desi_dts_status --directory ${status_dir} --last $k ${night} ${exposure}
+                                        update_status(status_dir, night, exposure, last=k)
                                         done = True
                                 if not done:
-                                    pass
-                                    # sprun desi_dts_status --directory ${status_dir} ${night} ${exposure}
+                                    update_status(status_dir, night, exposure)
                             else:
                                 log.info("%s/%s appears to be test data. Skipping pipeline activation.", night, exposure)
                         else:
                             log.error("Checksum problem detected for %s/%s!", night, exposure)
-                            # sprun desi_dts_status --directory ${status_dir} --failure ${night} ${exposure}
+                            update_status(status_dir, night, exposure, failure=True)
                     elif status == 'done':
                         #
                         # Do nothing, successfully.
@@ -327,7 +369,7 @@ def main():
                         pass
                     else:
                         log.error('rsync problem detected!')
-                        # sprun desi_dts_status --directory ${status_dir} --failure ${night} ${exposure}
+                        update_status(status_dir, night, exposure, failure=True)
             else:
                 log.warning('No links found, check connection.')
             #
