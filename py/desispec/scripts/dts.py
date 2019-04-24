@@ -9,6 +9,8 @@ Entry point for :command:`desi_dts`.
 from __future__ import absolute_import, division, print_function, unicode_literals
 import datetime as dt
 import os
+import shutil
+import stat
 import subprocess as sub
 import sys
 import time
@@ -22,6 +24,21 @@ log = get_logger(timestamp=True)
 DTSDir = namedtuple('DTSDir', 'source, staging, destination, hpss')
 
 
+dir_perm  = (stat.S_ISGID |
+             stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR |
+             stat.S_IRGRP | stat.S_IXGRP)
+file_perm = stat.S_IRUSR | stat.S_IRGRP
+
+
+expected_files = ('desi-{exposure}.fits.fz',
+                  'fibermap-{exposure}.fits',
+                  'guider-{exposure}.fits.fz')
+
+
+desi_night = os.path.realpath(os.path.join(os.environ['HOME'], 'bin',
+                                           'wrap_desi_night.sh'))
+
+
 def _config():
     """Wrap configuration so that module can be imported without
     environment variables set.
@@ -30,41 +47,6 @@ def _config():
                    os.path.realpath(os.path.join(os.environ['DESI_ROOT'], 'spectro', 'staging', 'raw')),
                    os.path.realpath(os.environ['DESI_SPECTRO_DATA']),
                    'desi/spectro/data'),]
-
-
-def pack_args(options):
-    """Parse and format NERSC-specific command-line options.
-
-    Parameters
-    ----------
-    :class:`argparse.Namespace`
-        The parsed command-line options.
-
-    Returns
-    -------
-    :class:`list`
-        Command-line options that can be appended to an existing command.
-    """
-    optlist = ("nersc",
-               "nersc_queue",
-               "nersc_queue_redshifts",
-               "nersc_maxtime",
-               "nersc_maxnodes",
-               "nersc_maxnodes_small",
-               "nersc_maxnodes_redshifts",
-               "nersc_shifter",
-               "mpi_procs",
-               "mpi_run",
-               "procs_per_node")
-    varg = vars(options)
-    opts = list()
-    for k, v in varg.items():
-        if k in optlist:
-            if v is not None:
-                opts.append("--{0}".format(k))
-                if not isinstance(v, bool):
-                    opts.append(v)
-    return opts
 
 
 def _options(*args):
@@ -113,14 +95,14 @@ def _options(*args):
     return options
 
 
-def check_exposure(dst, expid):
+def check_exposure(destination, exposure):
     """Ensure that all files associated with an exposure have arrived.
 
     Parameters
     ----------
-    dst : :class:`str`
+    destination : :class:`str`
         Delivery directory, typically ``DESI_SPECTRO_DATA/NIGHT``.
-    expid : :class:`int`
+    exposure : :class:`str`
         Exposure number.
 
     Returns
@@ -128,33 +110,80 @@ def check_exposure(dst, expid):
     :class:`bool`
         ``True`` if all files have arrived.
     """
-    files = ('fibermap-{0:08d}.fits', 'desi-{0:08d}.fits.fz', 'guider-{0:08d}.fits.fz')
-    return all([os.path.exists(os.path.join(dst, f.format(expid))) for f in files])
+    return all([os.path.exists(os.path.join(destination,
+                                            f.format(exposure=exposure)))
+                for f in expected_files])
 
 
-def move_file(filename, dst):
-    """Move delivered file from the DTS spool to the final raw data area.
-
-    This function will ensure that the destination directory exists.
+def verify_checksum(checksum_file, files):
+    """Verify checksums supplied with the raw data.
 
     Parameters
     ----------
-    filename : :class:`str`
-        The name, including full path, of the file to move.
-    dst : :class:`str`
-        The destination *directory*.
+    checksum_file : str
+        The checksum file.
+    files : list
+        The list of files in the directory containing the checksum file.
 
     Returns
     -------
-    :class:`str`
-        The value returned by :func:`shutil.move`.
+    int
+        An integer that indicates the number of checksum mismatches.
     """
-    from shutil import move
-    if not os.path.exists(dst):
-        log.info("mkdir('{0}', 0o2770)".format(dst))
-        os.mkdir(dst, 0o2770)
-    log.info("move('{0}', '{1}')".format(filename, dst))
-    return move(filename, dst)
+    with open(checksum_file) as c:
+        data = c.read()
+    lines = data.split('\n')
+    errors = 0
+    if len(lines) == len(files):
+        digest = dict([(l.split()[1], l.split()[0]) for l in lines if l])
+        d = os.path.dirname(checksum_file)
+        for f in files:
+            ff = os.path.join(d, f)
+            if ff != checksum_file:
+                with open(ff, 'rb') as fp:
+                    h = hashlib.sha256(fp.read).hexdigest()
+            if digest[f] == h:
+                log.debug("%f is valid.", ff)
+            else:
+                log.error("Checksum mismatch for %s!", ff)
+                errors += 1
+        return errors
+    else:
+        log.error("%s does not match the number of files!", checksum_file)
+        return -1
+
+
+def pipeline_update(pipeline_host, night, exposure, command='update', ssh='ssh',
+                    queue='realtime'):
+    """Generate a ``desi_night`` command to pass to the pipeline.
+
+    Parameters
+    ----------
+    pipeline_host : str
+        Run the pipeline on this NERSC system.
+    night : str
+        Night of observation.
+    exposure : str
+        Exposure number.
+    command : str, optional
+        Specific command to pass to ``desi_night``.
+    ssh : str, optional
+        SSH command to use.
+    queue : str, optional
+        NERSC queue to use.
+
+    Returns
+    -------
+    list
+        A command suitable for passing to :class:`subprocess.Popen`.
+    """
+    return [ssh, '-q', pipeline_host,
+            desi_night, command,
+            '--night', night,
+            '--expid', exposure,
+            '--nersc', pipeline_host,
+            '--nersc_queue', queue,
+            '--nersc_maxnodes', '25']
 
 
 def main():
@@ -216,8 +245,81 @@ def main():
                     else:
                         log.info('%s already transferred.', se)
                         status = 'done'
+                    #
+                    # Transfer complete.
+                    #
                     if status == '0':
-                        pass
+                        #
+                        # Check permissions.
+                        #
+                        log.debug("os.chmod('%s', 0%o)", se, dir_perm)
+                        # os.chmod(se, dir_perm)
+                        exposure_files = os.listdir(se)
+                        for f in exposure_files:
+                            ff = os.path.join(se, f)
+                            if os.path.isfile(ff):
+                                log.debug("os.chmod('%s', 0%o)", ff, file_perm)
+                                # os.chmod(ff, file_perm)
+                            else:
+                                log.warning("Unexpected file type detected: %s", ff)
+                        #
+                        # Verify checksums.
+                        #
+                        checksum_file = os.path.join(se, "checksum-{0}-{1}.sha256sum".format(night, exposure))
+                        if os.path.exists(checksum_file):
+                            checksum_status = verify_checksum(checksum_file, exposure_files)
+                        else:
+                            log.warning("No checksum file for %s/%s!", night, exposure)
+                            checksum_status = 0
+                        #
+                        # Did we pass checksums?
+                        #
+                        if checksum_status == 0:
+                            #
+                            # Set up DESI_SPECTRO_DATA.
+                            #
+                            dn = os.path.join(d.destination, night)
+                            if not os.path.isdir(dn):
+                                log.debug("os.makedirs('%s', exist_ok=True)", dn)
+                                # os.makedirs(dn, exist_ok=True)
+                            #
+                            # Move data into DESI_SPECTRO_DATA.
+                            #
+                            if not os.path.isdir(de):
+                                log.debug("shutil.move('%s', '%s')", se, dn)
+                                # shutil.move(se, dn)
+                            #
+                            # Is this a "realistic" exposure?
+                            #
+                            if options.pipeline and check_exposure(de, exposure):
+                                #
+                                # Run update
+                                #
+                                cmd = pipeline_update(options.nersc, night, exposure)
+                                log.debug(' '.join(cmd))
+                                # p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
+                                # out, err = p.communicate()
+                                # status = str(p.returncode)
+                                done_config = {'flats': 'flats', 'arcs': 'arcs',
+                                               'science': 'redshifts'}
+                                done = False
+                                for k in done_config:
+                                    if os.path.exists(os.path.join(de, '{0}-{1}-{2}.done'.format(k, night, exposure))):
+                                        cmd = pipeline_update(options.nersc, night, exposure, command=done_config[k])
+                                        log.debug(' '.join(cmd))
+                                        # p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
+                                        # out, err = p.communicate()
+                                        # status = str(p.returncode)
+                                        # sprun desi_dts_status --directory ${status_dir} --last $k ${night} ${exposure}
+                                        done = True
+                                if not done:
+                                    pass
+                                    # sprun desi_dts_status --directory ${status_dir} ${night} ${exposure}
+                            else:
+                                log.info("%s/%s appears to be test data. Skipping pipeline activation.", night, exposure)
+                        else:
+                            log.error("Checksum problem detected for %s/%s!", night, exposure)
+                            # sprun desi_dts_status --directory ${status_dir} --failure ${night} ${exposure}
                     elif status == 'done':
                         #
                         # Do nothing, successfully.
@@ -225,6 +327,7 @@ def main():
                         pass
                     else:
                         log.error('rsync problem detected!')
+                        # sprun desi_dts_status --directory ${status_dir} --failure ${night} ${exposure}
             else:
                 log.warning('No links found, check connection.')
             #
@@ -237,7 +340,35 @@ def main():
             hpss_file = d.hpss.replace('/', '_')
             ls_file = os.path.join(os.environ['CSCRATCH'], hpss_file + '.txt')
             if now >= options.backup:
-                pass
+                if os.path.isdir(os.path.join(d.destination, yesterday)):
+                    log.debug("os.remove('%s')", ls_file)
+                    os.remove(ls_file)
+                    cmd = ['/usr/common/mss/bin/hsi', '-O', ls_file,
+                           'ls', '-l', d.hpss]
+                    log.debug(' '.join(cmd))
+                    # p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
+                    # out, err = p.communicate()
+                    # status = str(p.returncode)
+                    #
+                    # Both a .tar and a .tar.idx file should be present.
+                    #
+                    with open(ls_file) as l:
+                        data = l.read()
+                    backup_files = [l.split()[-1] for l in data.split('\n') if l]
+                    backup_file = hpss_file + '_' + yesterday + '.tar'
+                    if backup_file in backup_files and backup_file + '.idx' in backup_files:
+                        log.debug("Backup of %s already complete.", yesterday)
+                    else:
+                        cmd = ['/usr/common/mss/bin/htar',
+                               '-cvhf', d.hpss + '/' + backup_file,
+                               '-H', 'crc:verify=all',
+                               yesterday]
+                        log.debug(' '.join(cmd))
+                        # p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
+                        # out, err = p.communicate()
+                        # status = str(p.returncode)
+                else:
+                    log.warning("No data from %s detected, skipping HPSS backup.", yesterday)
         # time.sleep(options.sleep*60)
         time.sleep(options.sleep)
     return 0
