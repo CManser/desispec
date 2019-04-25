@@ -43,13 +43,20 @@ $(function() {
             }
         },
         display: function() {
+            if (typeof this.raw === "undefined") alert("this.raw undefined!");
+            if (typeof this.nights === "undefined") alert("this.nights undefined!");
+            if (typeof this.setRaw === "undefined") alert("this.setRaw undefined!");
+            if (typeof this.display === "undefined") alert("this.display undefined!");
+            if (typeof this.nightButton === "undefined") alert("this.nightButton undefined!");
+            if (typeof this.padExpid === "undefined") alert("this.padExpid undefined!");
+            if (typeof this.finishNight === "undefined") alert("this.finishNight undefined!");
+            if (typeof this.startNight === "undefined") alert("this.startNight undefined!");
             $("#content").empty();
             var b_rows = [];
             var t_rows = [];
             var night, buttons, t;
             for (var k = 0; k < this.raw.length; k++) {
                 var n = this.raw[k][0];
-                if (typeof this.nights === "undefined") alert("Crazy stuff!");
                 if (this.nights.indexOf(n) == -1) {
                     //
                     // Finish previous night
