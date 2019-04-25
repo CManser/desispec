@@ -9,6 +9,7 @@ Entry point for :command:`desi_dts`.
 from __future__ import absolute_import, division, print_function, unicode_literals
 import datetime as dt
 import json
+import logging
 import os
 import shutil
 import stat
@@ -16,11 +17,13 @@ import subprocess as sub
 import sys
 import time
 from collections import namedtuple
+from logging.handlers import RotatingFileHandler, SMTPHandler
+from socket import getfqdn
 from pkg_resources import resource_filename
-from desiutil.log import get_logger, DEBUG
+from desiutil.log import get_logger
 
 
-log = get_logger(timestamp=True)
+log = None
 
 
 DTSDir = namedtuple('DTSDir', 'source, staging, destination, hpss')
@@ -37,8 +40,126 @@ expected_files = ('desi-{exposure}.fits.fz',
                   'guider-{exposure}.fits.fz')
 
 
-desi_night = os.path.realpath(os.path.join(os.environ['HOME'], 'bin',
-                                           'wrap_desi_night.sh'))
+class DTSPipeline(object):
+    """Simple object for generating pipeline commands.
+
+    Parameters
+    ----------
+    host : str
+        Run the pipeline on this NERSC system.
+    ssh : str, optional
+        SSH command to use.
+    queue : str, optional
+        NERSC queue to use.
+    nodes : int, optional
+        Value for the ``--nersc_maxnodes`` option.
+    """
+    desi_night = os.path.realpath(os.path.join(os.environ['HOME'],
+                                               'bin',
+                                               'wrap_desi_night.sh'))
+
+    def __init__(self, host, ssh='ssh', queue='realtime', nodes=25):
+        self.host = host
+        self.ssh = ssh
+        self.queue = queue
+        self.nodes = str(nodes)
+        return
+
+    def command(night, exposure, command='update'):
+        """Generate a ``desi_night`` command to pass to the pipeline.
+
+        Parameters
+        ----------
+        night : str
+            Night of observation.
+        exposure : str
+            Exposure number.
+        command : str, optional
+            Specific command to pass to ``desi_night``.
+
+        Returns
+        -------
+        list
+            A command suitable for passing to :class:`subprocess.Popen`.
+        """
+        cmd = command
+        if command == 'science':
+            cmd = 'redshifts'
+        c = [self.ssh, '-q', self.host,
+             self.desi_night, cmd,
+             '--night', night,
+             '--expid', exposure,
+             '--nersc', self.host,
+             '--nersc_queue', self.queue,
+             '--nersc_maxnodes', self.nodes]
+        log.debug(' '.join(c))
+        return cmd
+
+
+class DTSStatus(object):
+    """Simple object for interacting with DTS status reports.
+
+    Parameters
+    ----------
+    directory : str
+        Retrieve and store JSON-encoded transfer status data in `directory`.
+    """
+
+    def __init__(self, directory):
+        self.directory = directory
+        if not os.path.exists(self.directory):
+            log.debug("os.makedirs('%s')", self.directory)
+            os.makedirs(self.directory)
+            for ext in ('html', 'js'):
+                src = resource_filename('desispec', 'data/dts/dts_status.' + ext)
+                if ext == 'html':
+                    shutil.copyfile(src, os.path.join(self.directory, 'index.html'))
+                else:
+                    shutil.copy(src, self.directory)
+            self.status = list()
+            return
+        self.json = os.path.join(self.directory, 'dts_status.json')
+        try:
+            with open(self.json) as j:
+                self.status = json.load(j)
+        except FileNotFoundError:
+            self.status = list()
+        return
+
+    def update(self, night, exposure, stage, failure=False, last=None):
+        """Update the transfer status.
+
+        Parameters
+        ----------
+        night : str
+            Night of observation.
+        exposure : str
+            Exposure number.
+        stage : str
+            Stage of data transfer ('rsync', 'checksum', 'backup', ...).
+        failure : bool, optional
+            Indicate failure.
+        last : str, optional
+            Mark this exposure as the last of a given type for the night
+            ('arcs', 'flats', 'science').
+        """
+        k = lambda x: x[0]*10000000 + x[1]
+        if last is None:
+            l = ''
+        else:
+            l = last
+        ts = int(time.time() * 1000)  # Convert to milliseconds for JS.
+        in = int(night)
+        if exposure == 'all':
+            rows = [[r[0], r[1], stage, not failure, l, ts]
+                    for r in self.status if r[0] == in]
+        else:
+            rows = [[int(night), int(exposure), stage, not failure, l, ts],]
+        for row in rows:
+            self.status.insert(0, row)
+        self.status = sorted(self.status, key=k, reverse=True)
+        with open(self.json, 'w') as j:
+            json.dump(self.status, j, indent=None, separators=(',', ':'))
 
 
 def _config():
@@ -89,6 +210,51 @@ def _options(*args):
     return options
 
 
+def _popen(command):
+    """Simple wrapper for :class:`subprocess.Popen` to avoid repeated code.
+    """
+    log.debug(' '.join(command))
+    p = sub.Popen(command, stdout=sub.PIPE, stderr=sub.PIPE)
+    out, err = p.communicate()
+    return (str(p.returncode), out.decode('utf-8'), err.decode('utf-8'))
+
+
+def _configure_log(debug, size=100000000, backups=100):
+    """Re-configure the default logger returned by ``desiutil.log``.
+
+    Parameters
+    ----------
+    debug : bool
+        If ``True`` set the log level to ``DEBUG``.
+    size : int, optional
+        Rotate log file after N bytes.
+    backups : int, optional
+        Keep N old log files.
+    """
+    global log
+    log_filename = os.path.realpath(os.path.join(os.environ['DESI_ROOT'],
+                                                 'spectro', 'staging', 'logs',
+                                                 'desi_dts.log'))
+    log = get_logger(timestamp=True)
+    h = log.parent.handlers[0]
+    handler = RotatingFileHandler(log_filename, maxBytes=size,
+                                  backupCount=backups)
+    handler.setFormatter(h.formatter)
+    log.parent.removeHandler(h)
+    log.parent.addHandler(handler)
+    if debug:
+        log.setLevel(logging.DEBUG)
+    email_from = os.environ['USER'] + '@' + getfqdn()
+    email_to = ['desi-data@desi.lbl.gov',]
+    handler2 = SMTPHandler('localhost', email_from, email_to,
+                           'Critical error reported by desi_dts!')
+    formatter2 = logging.Formatter('At %(asctime)s, desi_dts failed with this message:\n\n%(message)s\n\nKia ora koutou,\nThe DESI Collaboration Account',
+                                   '%Y-%m-%dT%H:%M:%S %Z')
+    handler2.setFormatter(formatter2)
+    handler2.setLevel(logging.CRITICAL)
+    log.parent.addHandler(handler2)
+
+
 def check_exposure(destination, exposure):
     """Ensure that all files associated with an exposure have arrived.
 
@@ -122,7 +288,9 @@ def verify_checksum(checksum_file, files):
     Returns
     -------
     int
-        An integer that indicates the number of checksum mismatches.
+        An integer that indicates the number of checksum mismatches.  A
+        value of -1 indicates that the lines in the checksum file does not
+        match the number of files in the exposure.
     """
     with open(checksum_file) as c:
         data = c.read()
@@ -147,78 +315,6 @@ def verify_checksum(checksum_file, files):
         return -1
 
 
-def pipeline_update(pipeline_host, night, exposure, command='update', ssh='ssh',
-                    queue='realtime'):
-    """Generate a ``desi_night`` command to pass to the pipeline.
-
-    Parameters
-    ----------
-    pipeline_host : str
-        Run the pipeline on this NERSC system.
-    night : str
-        Night of observation.
-    exposure : str
-        Exposure number.
-    command : str, optional
-        Specific command to pass to ``desi_night``.
-    ssh : str, optional
-        SSH command to use.
-    queue : str, optional
-        NERSC queue to use.
-
-    Returns
-    -------
-    list
-        A command suitable for passing to :class:`subprocess.Popen`.
-    """
-    return [ssh, '-q', pipeline_host,
-            desi_night, command,
-            '--night', night,
-            '--expid', exposure,
-            '--nersc', pipeline_host,
-            '--nersc_queue', queue,
-            '--nersc_maxnodes', '25']
-
-
-def status_data(directory):
-    """Return the JSON-encoded transfer status data in `directory`.
-    """
-    if not os.path.exists(directory):
-        log.debug("os.makedirs('%s')", directory)
-        os.makedirs(directory)
-        for ext in ('html', 'js'):
-            src = resource_filename('desispec', 'data/dts/dts_status.' + ext)
-            if ext == 'html':
-                shutil.copyfile(src, os.path.join(directory, 'index.html'))
-            else:
-                shutil.copy(src, directory)
-        return []
-    json_file = os.path.join(directory, 'dts_status.json')
-    try:
-        with open(json_file) as j:
-            s = json.load(j)
-    except FileNotFoundError:
-        s = []
-    return s
-
-
-def update_status(directory, night, expid, failure=False, last=None):
-    """Update the transfer status.
-    """
-    s = status_data(directory)
-    if last is None:
-        l = ''
-    else:
-        l = last
-    row = [int(night), int(expid), not failure, l]
-    s.insert(0, row)
-    k = lambda x: x[0]*10000000 + x[1]
-    s = sorted(s, key=k, reverse=True)
-    json_file = os.path.join(directory, 'dts_status.json')
-    with open(json_file, 'w') as j:
-        json.dump(s, j, indent=None, separators=(',', ':'))
-
-
 def main():
     """Entry point for :command:`desi_dts`.
 
@@ -227,12 +323,10 @@ def main():
     :class:`int`
         An integer suitable for passing to :func:`sys.exit`.
     """
-    global log
     options = _options()
-    if options.debug:
-        log.setLevel(DEBUG)
+    _configure_log(options.debug)
     ssh = 'ssh'
-    # ssh = '/bin/ssh'
+    pipeline = DTSPipeline(options.nersc, ssh=ssh)
     while True:
         log.info('Starting transfer loop.')
         if os.path.exists(options.kill):
@@ -242,12 +336,10 @@ def main():
         # Find symlinks at KPNO.
         #
         for d in _config():
-            status_dir = os.path.join(os.path.dirname(d.staging), 'status')
+            status = DTSStatus(os.path.join(os.path.dirname(d.staging), 'status'))
             cmd = [ssh, '-q', 'dts', '/bin/find', d.source, '-type', 'l']
-            log.debug(' '.join(cmd))
-            p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
-            out, err = p.communicate()
-            links = sorted([x for x in out.decode('utf-8').split('\n') if x])
+            _, out, err = _popen(cmd)
+            links = sorted([x for x in out.split('\n') if x])
             if links:
                 for l in links:
                     exposure = os.path.basename(l)
@@ -271,20 +363,19 @@ def main():
                                '--omit-dir-times',
                                'dts:'+os.path.join(d.source, night, exposure)+'/',
                                se+'/']
-                        log.debug(' '.join(cmd))
                         if options.shadow:
-                            status = '0'
+                            log.debug(' '.join(cmd))
+                            rsync_status = '0'
                         else:
-                            p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
-                            out, err = p.communicate()
-                            status = str(p.returncode)
+                            rsync_status, out, err = _popen(cmd)
                     else:
                         log.info('%s already transferred.', se)
-                        status = 'done'
+                        rsync_status = 'done'
                     #
                     # Transfer complete.
                     #
-                    if status == '0':
+                    if rsync_status == '0':
+                        status.update(night, exposure, 'rsync')
                         #
                         # Check permissions.
                         #
@@ -313,6 +404,7 @@ def main():
                         # Did we pass checksums?
                         #
                         if checksum_status == 0:
+                            status.update(night, exposure, 'checksum')
                             #
                             # Set up DESI_SPECTRO_DATA.
                             #
@@ -335,40 +427,32 @@ def main():
                                 #
                                 # Run update
                                 #
-                                cmd = pipeline_update(options.nersc, night, exposure)
-                                log.debug(' '.join(cmd))
+                                cmd = pipeline.command(night, exposure)
                                 if not options.shadow:
-                                    p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
-                                    out, err = p.communicate()
-                                    status = str(p.returncode)
-                                done_config = {'flats': 'flats', 'arcs': 'arcs',
-                                               'science': 'redshifts'}
+                                    _, out, err = _popen(cmd)
                                 done = False
-                                for k in done_config:
+                                for k in ('flats', 'arcs', 'science'):
                                     if os.path.exists(os.path.join(de, '{0}-{1}-{2}.done'.format(k, night, exposure))):
-                                        cmd = pipeline_update(options.nersc, night, exposure, command=done_config[k])
-                                        log.debug(' '.join(cmd))
+                                        cmd = pipeline.command(night, exposure, command=k)
                                         if not options.shadow:
-                                            p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
-                                            out, err = p.communicate()
-                                            status = str(p.returncode)
-                                        update_status(status_dir, night, exposure, last=k)
+                                            _, out, err = _popen(cmd)
+                                        status.update(night, exposure, 'pipeline', last=k)
                                         done = True
                                 if not done:
-                                    update_status(status_dir, night, exposure)
+                                    status.update(night, exposure, 'pipeline')
                             else:
                                 log.info("%s/%s appears to be test data. Skipping pipeline activation.", night, exposure)
                         else:
                             log.error("Checksum problem detected for %s/%s!", night, exposure)
-                            update_status(status_dir, night, exposure, failure=True)
-                    elif status == 'done':
+                            status.update(night, exposure, 'checksum', failure=True)
+                    elif rsync_status == 'done':
                         #
                         # Do nothing, successfully.
                         #
                         pass
                     else:
                         log.error('rsync problem detected!')
-                        update_status(status_dir, night, exposure, failure=True)
+                        status.update(night, exposure, 'rsync', failure=True)
             else:
                 log.warning('No links found, check connection.')
             #
@@ -388,10 +472,7 @@ def main():
                     os.remove(ls_file)
                     cmd = ['/usr/common/mss/bin/hsi', '-O', ls_file,
                            'ls', '-l', d.hpss]
-                    log.debug(' '.join(cmd))
-                    p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
-                    out, err = p.communicate()
-                    status = str(p.returncode)
+                    _, out, err = _popen(cmd)
                     #
                     # Both a .tar and a .tar.idx file should be present.
                     #
@@ -409,13 +490,13 @@ def main():
                                '-cvhf', os.path.join(d.hpss, backup_file),
                                '-H', 'crc:verify=all',
                                yesterday]
-                        log.debug(' '.join(cmd))
-                        if not options.shadow:
-                            p = sub.Popen(cmd, stdout=sub.PIPE, stderr=sub.PIPE)
-                            out, err = p.communicate()
-                            status = str(p.returncode)
+                        if options.shadow:
+                            log.debug(' '.join(cmd))
+                        else:
+                            _, out, err = _popen(cmd)
                         log.debug("os.chdir('%s')", start_dir)
                         os.chdir(start_dir)
+                        status.update(night, 'all', 'backup')
                 else:
                     log.warning("No data from %s detected, skipping HPSS backup.", yesterday)
         time.sleep(options.sleep*60)
