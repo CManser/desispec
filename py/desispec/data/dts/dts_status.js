@@ -44,7 +44,6 @@ $(function() {
         },
         display: function() {
             $("#content").empty();
-            var nights = [];
             var b_rows = [];
             var t_rows = [];
             var night, buttons, t;
@@ -79,8 +78,8 @@ $(function() {
                 // }
                 var c = this.raw[k][2] ? "bg-success" : "bg-danger";
                 if (!this.raw[k][2]) {
-                    b_rows[1] = nightButton(n, "show", false);
-                    b_rows[2] = nightButton(n, "hide", false);
+                    b_rows[1] = this.nightButton(n, "show", false);
+                    b_rows[2] = this.nightButton(n, "hide", false);
                 }
                 var l = this.raw[k][3].length > 0 ? " Last " + this.raw[k][3] + " exposure." : "";
                 var r = "<tr id=\"e" + n + "/" + p +"\">" +
@@ -96,7 +95,7 @@ $(function() {
             //
             // Finish the final night
             //
-            finishNight(night, buttons, b_rows, t, t_rows);
+            this.finishNight(night, buttons, b_rows, t, t_rows);
         }
     };
     $.getJSON("dts_status.json", {}, Status.setRaw).always(Status.display);
