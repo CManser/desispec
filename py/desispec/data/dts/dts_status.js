@@ -85,7 +85,7 @@ $(function() {
                 var l = this.raw[k][3].length > 0 ? " Last " + this.raw[k][3] + " exposure." : "";
                 var r = "<tr id=\"e" + n + "/" + p +"\">" +
                         "<td>" + p + "</td>" +
-                        "<td class=\"" + c "\">" + l + "</td>" +
+                        "<td class=\"" + c + "\">" + l + "</td>" +
                         "</tr>"
                 // var r = "<li class=\"" + c + "\" id=\"" +
                 //         n + "/" + p + "\">" +
