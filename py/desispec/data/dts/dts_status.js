@@ -54,29 +54,29 @@ $(function() {
                     //
                     // Finish previous night
                     //
-                    finishNight(night, buttons, b_rows, t, t_rows);
+                    this.finishNight(night, buttons, b_rows, t, t_rows);
                     //
                     // Start a new night
                     //
-                    night = startNight(nights, n);
+                    night = this.startNight(nights, n);
                     buttons = $("<div/>", {"class": "col-4"});
                     t = $("<div/>", {"class": "col-8"});
                     b_rows = ["<p id=\"p" + n + "\">Night " + n + "&nbsp;",
-                              nightButton(n, "show", true),
-                              nightButton(n, "hide", true),
+                              this.nightButton(n, "show", true),
+                              this.nightButton(n, "hide", true),
                               "</p>"];
                     t_rows = ["<table id=\"t" + n + "\" style=\"display:none;\">"];
                 }
                 //
                 // Add to existing night
                 //
-                var p = padExpid(this.raw[k][1]);
-                var s = this.raw[k][2];
-                if (exposureMeta.hasOwnProperty(p)) {
-                    // update
-                } else {
-                    // new exposure
-                }
+                var p = this.padExpid(this.raw[k][1]);
+                // var s = this.raw[k][2];
+                // if (exposureMeta.hasOwnProperty(p)) {
+                //     // update
+                // } else {
+                //     // new exposure
+                // }
                 var c = this.raw[k][2] ? "bg-success" : "bg-danger";
                 if (!this.raw[k][2]) {
                     b_rows[1] = nightButton(n, "show", false);
@@ -85,7 +85,7 @@ $(function() {
                 var l = this.raw[k][3].length > 0 ? " Last " + this.raw[k][3] + " exposure." : "";
                 var r = "<tr id=\"e" + n + "/" + p +"\">" +
                         "<td>" + p + "</td>" +
-                        "<td>" + l + "</td>" +
+                        "<td class=\"" + c "\">" + l + "</td>" +
                         "</tr>"
                 // var r = "<li class=\"" + c + "\" id=\"" +
                 //         n + "/" + p + "\">" +
