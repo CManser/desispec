@@ -28,8 +28,8 @@ DTSDir = namedtuple('DTSDir', 'source, staging, destination, hpss')
 
 dir_perm  = (stat.S_ISGID |
              stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR |
-             stat.S_IRGRP | stat.S_IXGRP)
-file_perm = stat.S_IRUSR | stat.S_IRGRP
+             stat.S_IRGRP | stat.S_IXGRP)  # 0o2750
+file_perm = stat.S_IRUSR | stat.S_IRGRP    # 0o0440
 
 
 expected_files = ('desi-{exposure}.fits.fz',
@@ -418,6 +418,5 @@ def main():
                         os.chdir(start_dir)
                 else:
                     log.warning("No data from %s detected, skipping HPSS backup.", yesterday)
-        # time.sleep(options.sleep*60)
-        time.sleep(options.sleep)
+        time.sleep(options.sleep*60)
     return 0
