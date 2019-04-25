@@ -49,6 +49,7 @@ $(function() {
             var night, buttons, t;
             for (var k = 0; k < this.raw.length; k++) {
                 var n = this.raw[k][0];
+                if (typeof this.nights === "undefined") alert("Crazy stuff!");
                 if (this.nights.indexOf(n) == -1) {
                     //
                     // Finish previous night
