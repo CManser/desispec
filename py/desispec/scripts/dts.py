@@ -107,6 +107,8 @@ class DTSStatus(object):
 
     def __init__(self, directory):
         self.directory = directory
+        self.json = os.path.join(self.directory, 'dts_status.json')
+        self.status = list()
         if not os.path.exists(self.directory):
             log.debug("os.makedirs('%s')", self.directory)
             os.makedirs(self.directory)
@@ -116,14 +118,12 @@ class DTSStatus(object):
                     shutil.copyfile(src, os.path.join(self.directory, 'index.html'))
                 else:
                     shutil.copy(src, self.directory)
-            self.status = list()
             return
-        self.json = os.path.join(self.directory, 'dts_status.json')
         try:
             with open(self.json) as j:
                 self.status = json.load(j)
         except FileNotFoundError:
-            self.status = list()
+            pass
         return
 
     def update(self, night, exposure, stage, failure=False, last=None):
@@ -154,7 +154,7 @@ class DTSStatus(object):
             rows = [[r[0], r[1], stage, not failure, l, ts]
                     for r in self.status if r[0] == in]
         else:
-            rows = [[int(night), int(exposure), stage, not failure, l, ts],]
+            rows = [[in, int(exposure), stage, not failure, l, ts],]
         for row in rows:
             self.status.insert(0, row)
         self.status = sorted(self.status, key=k, reverse=True)
