@@ -65,7 +65,7 @@ $(function() {
                     //
                     // Start a new night
                     //
-                    night = this.startNight(nights, n);
+                    night = this.startNight(n);
                     buttons = $("<div/>", {"class": "col-4"});
                     t = $("<div/>", {"class": "col-8"});
                     b_rows = ["<p id=\"p" + n + "\">Night " + n + "&nbsp;",
@@ -106,6 +106,6 @@ $(function() {
             this.finishNight(night, buttons, b_rows, t, t_rows);
         }
     };
-    $.getJSON("dts_status.json", {}, Status.setRaw).always(Status.display);
+    $.getJSON("dts_status.json", {}, function(data) { Status.raw = data; }).always(Status.display);
     return true;
 });
