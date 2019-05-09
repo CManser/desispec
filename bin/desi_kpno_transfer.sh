@@ -8,9 +8,11 @@
 #
 # Source, staging and destination should be in 1-1-1 correspondence.
 #
-source_directories=(/exposures/desi/sps)
+source_directories=(/exposures/desi/sps \
+                    /data/fvc/data)
 # staging_directories=($(/bin/realpath ${DESI_ROOT}/spectro/staging/raw))
-destination_directories=($(/bin/realpath ${DESI_ROOT}/engineering/spectrograph/sps))
+destination_directories=($(/bin/realpath ${DESI_ROOT}/engineering/spectrograph/sps) \
+                         $(/bin/realpath ${DESI_ROOT}/engineering/fvc))
 n_source=${#source_directories[@]}
 # The existence of this file will shut down data transfers.
 kill_switch=${HOME}/stop_dts
