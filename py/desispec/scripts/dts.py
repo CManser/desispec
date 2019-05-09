@@ -143,7 +143,6 @@ class DTSStatus(object):
             Mark this exposure as the last of a given type for the night
             ('arcs', 'flats', 'science').
         """
-        k = lambda x: x[0]*10000000 + x[1]
         if last is None:
             l = ''
         else:
@@ -157,7 +156,8 @@ class DTSStatus(object):
             rows = [[in, int(exposure), stage, not failure, l, ts],]
         for row in rows:
             self.status.insert(0, row)
-        self.status = sorted(self.status, key=k, reverse=True)
+        self.status = sorted(self.status, key=lambda x: x[0]*10000000 + x[1],
+                             reverse=True)
         with open(self.json, 'w') as j:
             json.dump(self.status, j, indent=None, separators=(',', ':'))
 
