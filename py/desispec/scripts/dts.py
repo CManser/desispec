@@ -148,12 +148,12 @@ class DTSStatus(object):
         else:
             l = last
         ts = int(time.time() * 1000)  # Convert to milliseconds for JS.
-        in = int(night)
+        i = int(night)
         if exposure == 'all':
             rows = [[r[0], r[1], stage, not failure, l, ts]
-                    for r in self.status if r[0] == in]
+                    for r in self.status if r[0] == i]
         else:
-            rows = [[in, int(exposure), stage, not failure, l, ts],]
+            rows = [[i, int(exposure), stage, not failure, l, ts],]
         for row in rows:
             self.status.insert(0, row)
         self.status = sorted(self.status, key=lambda x: x[0]*10000000 + x[1],
