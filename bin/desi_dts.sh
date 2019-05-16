@@ -63,7 +63,8 @@ while /bin/true; do
                 # New night detected?
                 #
                 [[ ! -d ${staging}/${night} ]] && \
-                    sprun /bin/mkdir -p ${staging}/${night}
+                    sprun /bin/mkdir -p ${staging}/${night} && \
+                    sprun /bin/chmod 2750 ${staging}/${night}
                 #
                 # Has exposure already been transferred?
                 #
@@ -84,10 +85,8 @@ while /bin/true; do
                     #
                     # Check permissions.
                     #
-                    sprun /bin/chmod 2750 ${staging}/${night}/${exposure}
-                    for f in ${staging}/${night}/${exposure}/*; do
-                        sprun /bin/chmod 0440 ${f}
-                    done
+                    sprun /usr/bin/find ${staging}/${night}/${exposure} -type d -exec chmod 2750 \{\} \;
+                    sprun /usr/bin/find ${staging}/${night}/${exposure} -type f -exec chmod 0440 \{\} \;
                     #
                     # Verify checksums.
                     #
