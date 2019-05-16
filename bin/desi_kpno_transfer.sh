@@ -12,7 +12,7 @@ source_directories=(/exposures/desi/sps \
                     /data/fvc/data)
 # staging_directories=($(/bin/realpath ${DESI_ROOT}/spectro/staging/raw))
 destination_directories=($(/bin/realpath ${DESI_ROOT}/engineering/spectrograph/sps) \
-                         $(/bin/realpath ${DESI_ROOT}/engineering/fvc))
+                         $(/bin/realpath ${DESI_ROOT}/engineering/fvc/images))
 n_source=${#source_directories[@]}
 # The existence of this file will shut down data transfers.
 kill_switch=${HOME}/stop_dts
