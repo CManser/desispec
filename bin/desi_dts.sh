@@ -2,8 +2,9 @@
 #
 # Configuration
 #
-log=${HOME}/desi_dts.log
-[[ -f ${log} ]] && /bin/touch ${log}
+# log=${HOME}/desi_dts.log
+log=${DESI_ROOT}/spectro/staging/logs/desi_dts.log
+[[ -f ${log} ]] || /bin/touch ${log}
 #
 # Source, staging, destination and hpss should be in 1-1-1-1 correspondence.
 #
