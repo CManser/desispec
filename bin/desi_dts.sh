@@ -182,12 +182,42 @@ while /bin/true; do
         ls_file=${CSCRATCH}/${hpss_file}.txt
         if (( now >= backup_time )); then
             if [[ -d ${dest}/${yesterday} ]]; then
+                #
+                # See what's on HPSS.
+                #
                 sprun /bin/rm -f ${ls_file}
                 sprun /usr/common/mss/bin/hsi -O ${ls_file} ls -l ${hpss_directories[$k]}
                 #
                 # Both a .tar and a .tar.idx file should be present.
                 #
                 if [[ $(/usr/bin/grep ${yesterday} ${ls_file} | /usr/bin/wc -l) != 2 ]]; then
+                    #
+                    # Run a final sync of the night and see if anything changed.
+                    # This isn't supposed to be necessary, but during
+                    # commissioning, all kinds of crazy stuff might happen.
+                    #
+                    sync_file=${CSCRATCH}/final_sync_${yesterday}.log
+                    sprun /bin/rm -f ${sync_file}
+                    /bin/rsync --verbose --no-motd --dry-run \
+                        --recursive --copy-dirlinks --times --omit-dir-times \
+                        dts:${src}/${night}/ ${dest}/${night}/ &> ${sync_file}
+                    changed=$(/usr/bin/grep -E -v '^(receiving|sent|total)' ${sync_file} | \
+                        /usr/bin/grep -E -v '^$' | /usr/bin/wc -l)
+                    if [[ ${changed} == 0 ]]; then
+                        echo "INFO: No files appear to have changed in ${yesterday}." >> ${log}
+                        sprun /bin/rm -f ${sync_file}
+                    else
+                        echo "WARNING: New files detected in ${yesterday}!" >> ${log}
+                        sprun /usr/bin/cat ${sync_file}
+                        sprun /usr/bin/find ${staging}/${night} -type f -exec chmod 0640 \{\} \;
+                        sprun /bin/rsync --verbose --no-motd \
+                            --recursive --copy-dirlinks --times --omit-dir-times \
+                            dts:${src}/${night}/ ${dest}/${night}/
+                        sprun /usr/bin/find ${staging}/${night} -type f -exec chmod 0440 \{\} \;
+                    fi
+                    #
+                    # Issue HTAR command.
+                    #
                     (cd ${dest} && \
                         /usr/common/mss/bin/htar -cvhf \
                             ${hpss_directories[$k]}/${hpss_file}_${yesterday}.tar \
