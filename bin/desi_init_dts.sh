@@ -6,7 +6,7 @@
 # DESI Environment
 source /global/common/software/desi/desi_environment.sh master
 # Program or script you want to run
-PROGRAM=desi_dts.sh
+PROGRAM=${DESISPEC}/bin/desi_dts.sh
 # Command line options for PRGFILE
 PRGOPTS=""
 NICE="nice -n 19"
