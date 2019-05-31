@@ -201,7 +201,7 @@ while /bin/true; do
                     sprun /bin/rm -f ${sync_file}
                     /bin/rsync --verbose --no-motd --dry-run \
                         --recursive --copy-dirlinks --times --omit-dir-times \
-                        dts:${src}/${night}/ ${dest}/${night}/ &> ${sync_file}
+                        dts:${src}/${yesterday}/ ${dest}/${yesterday}/ &> ${sync_file}
                     changed=$(/usr/bin/grep -E -v '^(receiving|sent|total)' ${sync_file} | \
                         /usr/bin/grep -E -v '^$' | /usr/bin/wc -l)
                     if [[ ${changed} == 0 ]]; then
@@ -210,11 +210,11 @@ while /bin/true; do
                     else
                         echo "WARNING: New files detected in ${yesterday}!" >> ${log}
                         sprun /usr/bin/cat ${sync_file}
-                        sprun /usr/bin/find ${staging}/${night} -type f -exec chmod 0640 \{\} \;
+                        sprun /usr/bin/find ${staging}/${yesterday} -type f -exec chmod 0640 \{\} \;
                         sprun /bin/rsync --verbose --no-motd \
                             --recursive --copy-dirlinks --times --omit-dir-times \
-                            dts:${src}/${night}/ ${dest}/${night}/
-                        sprun /usr/bin/find ${staging}/${night} -type f -exec chmod 0440 \{\} \;
+                            dts:${src}/${yesterday}/ ${dest}/${yesterday}/
+                        sprun /usr/bin/find ${staging}/${yesterday} -type f -exec chmod 0440 \{\} \;
                     fi
                     #
                     # Issue HTAR command.
