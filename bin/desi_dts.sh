@@ -28,6 +28,8 @@ ssh="/bin/ssh -q ${pipeline_host}"
 # Wait this long before checking for new data.
 sleep=10m
 # sleep=1m
+# UTC time in hours to look for delayed files.
+ketchup_time=14
 # UTC time in hours to trigger HPSS backups.
 backup_time=20
 #
@@ -173,12 +175,52 @@ while /bin/true; do
             echo "WARNING: No links found, check connection." >> ${log}
         fi
         #
+        # WARNING: some of the auxilliary files below were created under
+        # the assumption that only one source directory exists at KPNO and
+        # only one destination directory exists at NERSC.  This should be
+        # fixed now, but watch out for this.
+        #
+        # Do a "catch-up" transfer to catch delayed files in the morning,
+        # rather than at noon.
+        # 07:00 MST = 14:00 UTC.
+        # This script can do nothing about exposures that were never linked
+        # into the DTS area at KPNO in the first place.
+        #
+        yesterday=$(/bin/date --date="@$(($(/bin/date +%s) - 86400))" +'%Y%m%d')
+        now=$(/bin/date -u +'%H')
+        ketchup_file=$(echo ${dest} | tr '/' '_')
+        sync_file=${CSCRATCH}/ketchup${ketchup_file}_${yesterday}.log
+        if (( now >= ketchup_time )); then
+            if [[ -d ${dest}/${yesterday} ]]; then
+                if [[ -f ${sync_file} ]]; then
+                    echo "DEBUG: ${sync_file} detected, catch-up transfer is done."
+                else
+                    /bin/rsync --verbose --no-motd --dry-run \
+                        --recursive --copy-dirlinks --times --omit-dir-times \
+                        dts:${src}/${yesterday}/ ${dest}/${yesterday}/ &> ${sync_file}
+                    changed=$(/usr/bin/grep -E -v '^(receiving|sent|total)' ${sync_file} | \
+                        /usr/bin/grep -E -v '^$' | /usr/bin/wc -l)
+                    if [[ ${changed} == 0 ]]; then
+                        echo "INFO: No files appear to have changed in ${yesterday}." >> ${log}
+                    else
+                        echo "WARNING: New files detected in ${yesterday}!" >> ${log}
+                        sprun /usr/bin/cat ${sync_file}
+                        sprun /usr/bin/find ${dest}/${yesterday} -type f -exec chmod 0640 \{\} \;
+                        sprun /bin/rsync --verbose --no-motd \
+                            --recursive --copy-dirlinks --times --omit-dir-times \
+                            dts:${src}/${yesterday}/ ${dest}/${yesterday}/
+                        sprun /usr/bin/find ${dest}/${yesterday} -type f -exec chmod 0440 \{\} \;
+                    fi
+                fi
+            else
+                echo "WARNING: No data from ${yesterday} detected, skipping catch-up transfer." >> ${log}
+            fi
+        fi
+        #
         # Are any nights eligible for backup?
         # 12:00 MST = 19:00 UTC.
         # Plus one hour just to be safe, so after 20:00 UTC.
         #
-        yesterday=$(/bin/date --date="@$(($(/bin/date +%s) - 86400))" +'%Y%m%d')
-        now=$(/bin/date -u +'%H')
         hpss_file=$(echo ${hpss_directories[$k]} | tr '/' '_')
         ls_file=${CSCRATCH}/${hpss_file}.txt
         if (( now >= backup_time )); then
@@ -197,7 +239,7 @@ while /bin/true; do
                     # This isn't supposed to be necessary, but during
                     # commissioning, all kinds of crazy stuff might happen.
                     #
-                    sync_file=${CSCRATCH}/final_sync_${yesterday}.log
+                    sync_file=${CSCRATCH}/final_sync${ketchup_file}_${yesterday}.log
                     sprun /bin/rm -f ${sync_file}
                     /bin/rsync --verbose --no-motd --dry-run \
                         --recursive --copy-dirlinks --times --omit-dir-times \
@@ -210,11 +252,11 @@ while /bin/true; do
                     else
                         echo "WARNING: New files detected in ${yesterday}!" >> ${log}
                         sprun /usr/bin/cat ${sync_file}
-                        sprun /usr/bin/find ${staging}/${yesterday} -type f -exec chmod 0640 \{\} \;
+                        sprun /usr/bin/find ${dest}/${yesterday} -type f -exec chmod 0640 \{\} \;
                         sprun /bin/rsync --verbose --no-motd \
                             --recursive --copy-dirlinks --times --omit-dir-times \
                             dts:${src}/${yesterday}/ ${dest}/${yesterday}/
-                        sprun /usr/bin/find ${staging}/${yesterday} -type f -exec chmod 0440 \{\} \;
+                        sprun /usr/bin/find ${dest}/${yesterday} -type f -exec chmod 0440 \{\} \;
                     fi
                     #
                     # Issue HTAR command.
