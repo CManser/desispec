@@ -2,23 +2,12 @@
 #
 # Configuration
 #
-# log=${HOME}/desi_dts.log
+# Logging.
 log=${DESI_ROOT}/spectro/staging/logs/desi_dts.log
-[[ -f ${log} ]] || /bin/touch ${log}
-#
-# Source, staging, destination and hpss should be in 1-1-1-1 correspondence.
-#
-source_directories=(/data/dts/exposures/raw)
-# source_directories=(/data/dts/exposures/test)
-staging_directories=($(/bin/realpath ${DESI_ROOT}/spectro/staging/raw))
-# staging_directories=($(/bin/realpath ${CSCRATCH}/desi/spectro/staging/raw))
-destination_directories=($(/bin/realpath ${DESI_SPECTRO_DATA}))
-# destination_directories=($(/bin/realpath ${CSCRATCH}/desi/spectro/data))
-hpss_directories=(desi/spectro/data)
-n_source=${#source_directories[@]}
 # Enable activation of the DESI pipeline.  If this is /bin/false, only
 # transfer files.
 run_pipeline=/bin/false
+# Run the pipeline on this host.
 pipeline_host=cori
 # The existence of this file will shut down data transfers.
 kill_switch=${HOME}/stop_dts
@@ -34,9 +23,21 @@ ketchup_time=14
 # UTC time in hours to trigger HPSS backups.
 backup_time=20
 #
+# Source, staging, destination and hpss should be in 1-1-1-1 correspondence.
+#
+source_directories=(/data/dts/exposures/raw)
+# source_directories=(/data/dts/exposures/test)
+staging_directories=($(/bin/realpath ${DESI_ROOT}/spectro/staging/raw))
+# staging_directories=($(/bin/realpath ${CSCRATCH}/desi/spectro/staging/raw))
+destination_directories=($(/bin/realpath ${DESI_SPECTRO_DATA}))
+# destination_directories=($(/bin/realpath ${CSCRATCH}/desi/spectro/data))
+hpss_directories=(desi/spectro/data)
+n_source=${#source_directories[@]}
+#
 # Functions
 #
 function log {
+    [[ -f ${log} ]] || /bin/touch ${log}
     local l=$(tr '[a-z]' '[A-Z]' <<<$1)
     echo "${l}: $2" >> ${log}
 }
