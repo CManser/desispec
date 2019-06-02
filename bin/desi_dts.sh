@@ -18,11 +18,12 @@ hpss_directories=(desi/spectro/data)
 n_source=${#source_directories[@]}
 # Enable activation of the DESI pipeline.  If this is /bin/false, only
 # transfer files.
-run_pipeline=/bin/true
-pipeline_host=edison
+run_pipeline=/bin/false
+pipeline_host=cori
 # The existence of this file will shut down data transfers.
 kill_switch=${HOME}/stop_dts
 # Call this executable on the pipeline host.
+# Make sure the real path is actually valid on the pipeline host.
 desi_night=$(/bin/realpath ${HOME}/bin/wrap_desi_night.sh)
 ssh="/bin/ssh -q ${pipeline_host}"
 # Wait this long before checking for new data.
@@ -35,8 +36,23 @@ backup_time=20
 #
 # Functions
 #
+function log {
+    echo "$1: $2" >> ${log}
+}
+function debug {
+    log DEBUG "$@"
+}
+function info {
+    log INFO "$@"
+}
+function warning {
+    log WARNING "$@"
+}
+function error {
+    log ERROR "$@"
+}
 function sprun {
-    echo "DEBUG: $@" >> ${log}
+    debug "$@"
     "$@" >> ${log} 2>&1
     return $?
 }
@@ -44,9 +60,9 @@ function sprun {
 # Endless loop!
 #
 while /bin/true; do
-    echo "INFO:" $(/bin/date +'%Y-%m-%dT%H:%M:%S%z') >> ${log}
+    info $(/bin/date +'%Y-%m-%dT%H:%M:%S%z')
     if [[ -f ${kill_switch} ]]; then
-        echo "INFO: ${kill_switch} detected, shutting down transfer daemon." >> ${log}
+        info "${kill_switch} detected, shutting down transfer daemon."
         exit 0
     fi
     #
@@ -78,7 +94,7 @@ while /bin/true; do
                         dts:${src}/${night}/${exposure}/ ${staging}/${night}/${exposure}/
                     status=$?
                 else
-                    echo "INFO: ${staging}/${night}/${exposure} already transferred." >> ${log}
+                    info "${staging}/${night}/${exposure} already transferred."
                     status="done"
                 fi
                 #
@@ -97,7 +113,7 @@ while /bin/true; do
                         (cd ${staging}/${night}/${exposure} && /bin/sha256sum --quiet --check checksum-${night}-${exposure}.sha256sum) &>> ${log}
                         checksum_status=$?
                     else
-                        echo "WARNING: no checksum file for ${night}/${exposure}." >> ${log}
+                        warning "No checksum file for ${night}/${exposure}."
                         checksum_status=0
                     fi
                     #
@@ -155,11 +171,11 @@ while /bin/true; do
                                 sprun desi_dts_status --directory ${status_dir} ${night} ${exposure}
                             fi
                         else
-                            echo "INFO: ${night}/${exposure} appears to be test data.  Skipping pipeline activation." >> ${log}
+                            info "${night}/${exposure} appears to be test data.  Skipping pipeline activation."
                         fi
                     else
-                        echo "ERROR: checksum problem detected for ${night}/${exposure}!" >> ${log}
-                        sprun desi_dts_status --directory ${status_dir} --failure ${night} ${exposure}
+                        error "Checksum problem detected for ${night}/${exposure}!"
+                        ${run_pipeline} && sprun desi_dts_status --directory ${status_dir} --failure ${night} ${exposure}
                     fi
                 elif [[ "${status}" == "done" ]]; then
                     #
@@ -167,12 +183,12 @@ while /bin/true; do
                     #
                     :
                 else
-                    echo "ERROR: rsync problem detected!" >> ${log}
-                    sprun desi_dts_status --directory ${status_dir} --failure ${night} ${exposure}
+                    error "rsync problem detected for ${night}/${exposure}!"
+                    ${run_pipeline} && sprun desi_dts_status --directory ${status_dir} --failure ${night} ${exposure}
                 fi
             done
         else
-            echo "WARNING: No links found, check connection." >> ${log}
+            warning "No links found, check connection."
         fi
         #
         # WARNING: some of the auxilliary files below were created under
@@ -201,9 +217,9 @@ while /bin/true; do
                     changed=$(/usr/bin/grep -E -v '^(receiving|sent|total)' ${sync_file} | \
                         /usr/bin/grep -E -v '^$' | /usr/bin/wc -l)
                     if [[ ${changed} == 0 ]]; then
-                        echo "INFO: No files appear to have changed in ${yesterday}." >> ${log}
+                        info "No files appear to have changed in ${yesterday}."
                     else
-                        echo "WARNING: New files detected in ${yesterday}!" >> ${log}
+                        warning "New files detected in ${yesterday}!"
                         sprun /usr/bin/cat ${sync_file}
                         sprun /usr/bin/find ${dest}/${yesterday} -type f -exec chmod 0640 \{\} \;
                         sprun /bin/rsync --verbose --no-motd \
@@ -213,7 +229,7 @@ while /bin/true; do
                     fi
                 fi
             else
-                echo "WARNING: No data from ${yesterday} detected, skipping catch-up transfer." >> ${log}
+                warning "No data from ${yesterday} detected, skipping catch-up transfer."
             fi
         fi
         #
@@ -247,10 +263,10 @@ while /bin/true; do
                     changed=$(/usr/bin/grep -E -v '^(receiving|sent|total)' ${sync_file} | \
                         /usr/bin/grep -E -v '^$' | /usr/bin/wc -l)
                     if [[ ${changed} == 0 ]]; then
-                        echo "INFO: No files appear to have changed in ${yesterday}." >> ${log}
+                        info "No files appear to have changed in ${yesterday}."
                         sprun /bin/rm -f ${sync_file}
                     else
-                        echo "WARNING: New files detected in ${yesterday}!" >> ${log}
+                        warning "New files detected in ${yesterday}!"
                         sprun /usr/bin/cat ${sync_file}
                         sprun /usr/bin/find ${dest}/${yesterday} -type f -exec chmod 0640 \{\} \;
                         sprun /bin/rsync --verbose --no-motd \
@@ -267,9 +283,9 @@ while /bin/true; do
                             -H crc:verify=all ${yesterday}) &>> ${log}
                 fi
             else
-                echo "WARNING: No data from ${yesterday} detected, skipping HPSS backup." >> ${log}
+                warning "No data from ${yesterday} detected, skipping HPSS backup."
             fi
         fi
     done
-    /bin/sleep ${sleep}
+    sprun /bin/sleep ${sleep}
 done
