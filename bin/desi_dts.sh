@@ -37,23 +37,24 @@ backup_time=20
 # Functions
 #
 function log {
-    echo "$1: $2" >> ${log}
+    local l=$(tr '[a-z]' '[A-Z]' <<<$1)
+    echo "${l}: $2" >> ${log}
 }
 function debug {
-    log DEBUG "$@"
+    log ${FUNCNAME} "$*"
 }
 function info {
-    log INFO "$@"
+    log ${FUNCNAME} "$*"
 }
 function warning {
-    log WARNING "$@"
+    log ${FUNCNAME} "$*"
 }
 function error {
-    log ERROR "$@"
+    log ${FUNCNAME} "$*"
 }
 function sprun {
-    debug "$@"
-    "$@" >> ${log} 2>&1
+    debug "$*"
+    $* >> ${log} 2>&1
     return $?
 }
 #
