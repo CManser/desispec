@@ -14,10 +14,10 @@ kill_switch=${HOME}/stop_dts
 # Call this executable on the pipeline host.
 # Make sure the real path is actually valid on the pipeline host.
 desi_night=$(/bin/realpath ${HOME}/bin/wrap_desi_night.sh)
+# SSH Command.
 ssh="/bin/ssh -q ${pipeline_host}"
 # Wait this long before checking for new data.
 sleep=10m
-# sleep=1m
 # UTC time in hours to look for delayed files.
 ketchup_time=14
 # UTC time in hours to trigger HPSS backups.
@@ -74,6 +74,7 @@ while /bin/true; do
         src=${source_directories[$k]}
         staging=${staging_directories[$k]}
         dest=${destination_directories[$k]}
+        hpss=${hpss_directories[$k]}
         status_dir=$(/bin/dirname ${staging})/status
         links=$(/bin/ssh -q dts /bin/find ${src} -type l 2>/dev/null | sort)
         if [[ -n "${links}" ]]; then
@@ -239,7 +240,7 @@ while /bin/true; do
         # 12:00 MST = 19:00 UTC.
         # Plus one hour just to be safe, so after 20:00 UTC.
         #
-        hpss_file=$(echo ${hpss_directories[$k]} | tr '/' '_')
+        hpss_file=$(echo ${hpss} | tr '/' '_')
         ls_file=${CSCRATCH}/${hpss_file}.txt
         if (( now >= backup_time )); then
             if [[ -d ${dest}/${yesterday} ]]; then
@@ -247,7 +248,7 @@ while /bin/true; do
                 # See what's on HPSS.
                 #
                 sprun /bin/rm -f ${ls_file}
-                sprun /usr/common/mss/bin/hsi -O ${ls_file} ls -l ${hpss_directories[$k]}
+                sprun /usr/common/mss/bin/hsi -O ${ls_file} ls -l ${hpss}
                 #
                 # Both a .tar and a .tar.idx file should be present.
                 #
@@ -281,7 +282,7 @@ while /bin/true; do
                     #
                     (cd ${dest} && \
                         /usr/common/mss/bin/htar -cvhf \
-                            ${hpss_directories[$k]}/${hpss_file}_${yesterday}.tar \
+                            ${hpss}/${hpss_file}_${yesterday}.tar \
                             -H crc:verify=all ${yesterday}) &>> ${log}
                 fi
             else
