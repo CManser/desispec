@@ -19,9 +19,29 @@ kill_switch=${HOME}/stop_dts
 #
 # Functions
 #
+#
+# Functions
+#
+function log {
+    [[ -f ${log} ]] || /bin/touch ${log}
+    local l=$(tr '[a-z]' '[A-Z]' <<<$1)
+    echo "${l}: $2" >> ${log}
+}
+function debug {
+    log ${FUNCNAME} "$*"
+}
+function info {
+    log ${FUNCNAME} "$*"
+}
+function warning {
+    log ${FUNCNAME} "$*"
+}
+function error {
+    log ${FUNCNAME} "$*"
+}
 function sprun {
-    echo "$@" >> ${log}
-    "$@" >> ${log} 2>&1
+    debug "$*"
+    $* >> ${log} 2>&1
     return $?
 }
 #
@@ -72,7 +92,7 @@ while /bin/true; do
         dest=${destination_directories[$k]}
         log=${dest}.log
         [[ -f ${log} ]] || /bin/touch ${log}
-        /bin/date +'%Y-%m-%dT%H:%M:%S%z' >> ${log}
+        info $(/bin/date +'%Y-%m-%dT%H:%M:%S%z')
         sprun /bin/rsync --verbose --no-motd \
             --recursive --copy-dirlinks --times --omit-dir-times \
             dts:${src}/ ${dest}/
@@ -101,7 +121,7 @@ while /bin/true; do
             #
             # :
         else
-            echo "ERROR: rsync problem detected!" >> ${log}
+            error "rsync problem detected for ${src} -> ${dest}!"
         fi
     done
     if ${daemon}; then
