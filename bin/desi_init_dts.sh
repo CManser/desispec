@@ -4,7 +4,8 @@
 # Adapted for DESI: Benjamin Weaver 2018-0627
 #
 # DESI Environment
-source /global/common/software/desi/desi_environment.sh master
+# Moved this to crontab
+# source /global/common/software/desi/desi_environment.sh ${DESIMODULES_VERSION}
 # Program or script you want to run
 PROGRAM=${DESISPEC}/bin/desi_dts.sh
 # Command line options for PRGFILE

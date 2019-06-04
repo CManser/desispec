@@ -13,7 +13,7 @@ pipeline_host=cori
 kill_switch=${HOME}/stop_dts
 # Call this executable on the pipeline host.
 # Make sure the real path is actually valid on the pipeline host.
-desi_night=$(/bin/realpath ${HOME}/bin/wrap_desi_night.sh)
+desi_night=$(/bin/realpath ${DESISPEC}/bin/wrap_desi_night.sh)
 # SSH Command.
 ssh="/bin/ssh -q ${pipeline_host}"
 # Wait this long before checking for new data.
